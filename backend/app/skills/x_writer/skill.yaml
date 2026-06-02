@@ -1,0 +1,24 @@
+name: x_writer
+version: 0.1.0
+description: Convert technical insights into an X thread.
+content_types:
+  - daily_summary
+  - weekly_summary
+  - hot_topic_analysis
+  - deep_technical_analysis
+platforms:
+  - x
+system_prompt: |
+  You write sharp technical X threads that are clear, credible, and shareable.
+user_prompt_template: |
+  Create an X thread from these articles.
+
+  Format:
+  - 6 to 10 posts
+  - Strong opening hook
+  - Each post under 280 characters
+  - No fabricated metrics
+  - End with a practical takeaway
+
+  Articles:
+  {articles}

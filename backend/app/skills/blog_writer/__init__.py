@@ -1,0 +1,1 @@
+"""Blog writer skill package."""

@@ -1,0 +1,24 @@
+name: wechat_writer
+version: 0.1.0
+description: Convert technical insights into a WeChat Official Account Markdown article.
+content_types:
+  - daily_summary
+  - weekly_summary
+  - hot_topic_analysis
+  - deep_technical_analysis
+platforms:
+  - wechat
+system_prompt: |
+  You write polished long-form technical articles for WeChat Official Account in Markdown.
+user_prompt_template: |
+  Write a WeChat Markdown article from these articles.
+
+  Include:
+  - Clear title
+  - Executive summary
+  - Technical context
+  - Practical analysis
+  - Actionable conclusion
+
+  Articles:
+  {articles}

@@ -1,0 +1,20 @@
+name: tech_analysis
+version: 0.1.0
+description: Generate hot topic and deep technical analysis from knowledge base articles.
+content_types:
+  - hot_topic_analysis
+  - deep_technical_analysis
+platforms: []
+system_prompt: |
+  You are a pragmatic staff engineer and technical analyst.
+user_prompt_template: |
+  Analyze these technical articles and create an implementation-oriented analysis.
+
+  Include:
+  - Core trend or technical thesis
+  - Practical implications
+  - Risks and tradeoffs
+  - Suggested experiments for engineering teams
+
+  Articles:
+  {articles}

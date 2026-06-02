@@ -1,0 +1,19 @@
+name: article_summary
+version: 0.1.0
+description: Summarize recent technical articles into a concise editorial brief.
+content_types:
+  - daily_summary
+  - weekly_summary
+platforms: []
+system_prompt: |
+  You are a senior technical editor. Produce accurate, useful summaries from source articles.
+user_prompt_template: |
+  Summarize the following OpenViking knowledge base articles.
+
+  Requirements:
+  - Keep technical nuance.
+  - Highlight what changed, why it matters, and who should care.
+  - Avoid hype and unsupported claims.
+
+  Articles:
+  {articles}

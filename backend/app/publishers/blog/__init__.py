@@ -1,0 +1,1 @@
+"""Local blog publisher plugin."""

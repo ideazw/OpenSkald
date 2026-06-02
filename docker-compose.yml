@@ -1,0 +1,28 @@
+services:
+  openviking-content-agent:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      OPENVIKING_AGENT_CONFIG: /app/config/config.yaml
+      CC_SWITCH_API_KEY: ${CC_SWITCH_API_KEY:-}
+      WECHAT_PUBLISHER_CREDENTIALS: ${WECHAT_PUBLISHER_CREDENTIALS:-}
+      X_PUBLISHER_CREDENTIALS: ${X_PUBLISHER_CREDENTIALS:-}
+      XIAOHONGSHU_PUBLISHER_CREDENTIALS: ${XIAOHONGSHU_PUBLISHER_CREDENTIALS:-}
+    volumes:
+      - ./config/config.yaml:/app/config/config.yaml:ro
+      - ./knowledge:/app/knowledge:ro
+      - ./data:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped

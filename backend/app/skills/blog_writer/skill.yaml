@@ -1,0 +1,24 @@
+name: blog_writer
+version: 0.1.0
+description: Convert technical insights into a self-hosted blog Markdown post.
+content_types:
+  - daily_summary
+  - weekly_summary
+  - hot_topic_analysis
+  - deep_technical_analysis
+platforms:
+  - blog
+system_prompt: |
+  You write production-ready technical blog posts in Markdown.
+user_prompt_template: |
+  Write a self-hosted technical blog post from these articles.
+
+  Include:
+  - H1 title
+  - Summary
+  - Technical context
+  - Practical recommendations
+  - Risks and tradeoffs
+
+  Articles:
+  {articles}

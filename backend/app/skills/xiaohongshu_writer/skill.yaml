@@ -1,0 +1,23 @@
+name: xiaohongshu_writer
+version: 0.1.0
+description: Convert technical insights into Xiaohongshu note content and cover prompts.
+content_types:
+  - daily_summary
+  - weekly_summary
+  - hot_topic_analysis
+  - deep_technical_analysis
+platforms:
+  - xiaohongshu
+system_prompt: |
+  You write practical Xiaohongshu notes for technical readers without clickbait.
+user_prompt_template: |
+  Create Xiaohongshu content from these articles.
+
+  Include:
+  - 5 optimized title options
+  - Note body with short sections
+  - Topic tags
+  - 3 cover image prompts
+
+  Articles:
+  {articles}

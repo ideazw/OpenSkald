@@ -1,0 +1,102 @@
+environment: development
+log_level: INFO
+
+llm:
+  provider: cc_switch
+  base_url: http://localhost:3456/v1
+  api_key_env: CC_SWITCH_API_KEY
+  model: claude-3-5-sonnet
+  timeout_seconds: 60
+
+openviking:
+  knowledge_base_path: ./knowledge
+  include_globs:
+    - "**/*.md"
+    - "**/*.txt"
+  max_articles_per_run: 10
+
+scheduler:
+  ingest_knowledge:
+    enabled: true
+    cron: "*/30 * * * *"
+    action: ingest_knowledge
+    platforms: []
+  daily_summary:
+    enabled: true
+    cron: "0 9 * * *"
+    action: generate
+    content_type: daily_summary
+    platforms: ["blog", "wechat", "x", "xiaohongshu"]
+  weekly_summary:
+    enabled: true
+    cron: "0 10 * * 1"
+    action: generate
+    content_type: weekly_summary
+    platforms: ["blog", "wechat", "x"]
+  hot_topic_analysis:
+    enabled: true
+    cron: "0 11 * * *"
+    action: generate
+    content_type: hot_topic_analysis
+    platforms: ["blog", "wechat", "x", "xiaohongshu"]
+  deep_technical_analysis:
+    enabled: true
+    cron: "0 15 * * 2"
+    action: generate
+    content_type: deep_technical_analysis
+    platforms: ["blog", "wechat", "x"]
+  publish_approved:
+    enabled: true
+    cron: "*/15 * * * *"
+    action: publish_approved
+    platforms: ["blog", "wechat", "x", "xiaohongshu"]
+
+publishers:
+  # Blog
+  # account_id is the local output directory for generated Markdown posts.
+  blog:
+    enabled: true
+    account_id: ./data/blog
+    dry_run: false
+    credentials_env: null
+
+  # WeChat Official Account
+  # Credentials: {"app_id":"wx_xxx","app_secret":"xxx","thumb_media_id":"xxx"}
+  # Get from: https://mp.weixin.qq.com -> 设置与开发 -> 基本配置
+  # Set env:
+  # export WECHAT_PUBLISHER_CREDENTIALS='{"app_id":"wx_xxx","app_secret":"xxx","thumb_media_id":"xxx"}'
+  wechat:
+    enabled: false
+    account_id: null
+    dry_run: true
+    credentials_env: WECHAT_PUBLISHER_CREDENTIALS
+
+  # X (Twitter)
+  # Credentials: {"user_access_token":"xxx"}
+  # Required: User Access Token with write/post scope, not an app-only read bearer token.
+  # Get from: https://developer.x.com -> App -> User authentication settings / OAuth flow
+  # Set env: export X_PUBLISHER_CREDENTIALS='{"user_access_token":"xxx"}'
+  x:
+    enabled: false
+    account_id: null
+    dry_run: true
+    credentials_env: X_PUBLISHER_CREDENTIALS
+
+  # Xiaohongshu
+  # Credentials: {"cookie":"xxx"}
+  # Get from: browser DevTools after logging in to https://creator.xiaohongshu.com
+  # Set env: export XIAOHONGSHU_PUBLISHER_CREDENTIALS='{"cookie":"xxx"}'
+  xiaohongshu:
+    enabled: false
+    account_id: null
+    dry_run: true
+    credentials_env: XIAOHONGSHU_PUBLISHER_CREDENTIALS
+
+review:
+  require_human_approval: true
+  storage_path: ./data/review_queue.jsonl
+
+memory:
+  storage_path: ./data/memory.jsonl
+  skill_proposals_path: ./data/skill_proposals.jsonl
+  article_index_path: ./data/articles.jsonl

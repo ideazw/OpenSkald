@@ -11,9 +11,9 @@ def test_load_config_from_yaml(tmp_path: Path) -> None:
     config_path.write_text(
         """
 llm:
-  provider: cc_switch
-  base_url: http://localhost:3456/v1
-  api_key_env: CC_SWITCH_API_KEY
+  provider: deepseek
+  base_url: https://api.deepseek.com
+  api_key_env: DEEPSEEK_API_KEY
   model: test-model
 publishers:
   x:

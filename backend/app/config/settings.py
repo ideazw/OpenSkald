@@ -10,10 +10,10 @@ from pydantic import BaseModel, Field
 
 
 class LLMConfig(BaseModel):
-    provider: str = "cc_switch"
-    base_url: str = "http://localhost:3456/v1"
-    api_key_env: str = "CC_SWITCH_API_KEY"
-    model: str = "configured-in-config-yaml"
+    provider: str = "deepseek"
+    base_url: str = "https://api.deepseek.com"
+    api_key_env: str = "DEEPSEEK_API_KEY"
+    model: str = "deepseek-v4-flash"
     timeout_seconds: float = 60
 
 

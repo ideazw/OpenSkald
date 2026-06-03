@@ -14,7 +14,7 @@ flowchart LR
   K --> A["Content agent"]
   C["config.yaml"] --> A
   S["Dynamic skills"] --> A
-  L["LLMProvider via CC Switch"] --> A
+  L["OpenAI-compatible LLM API"] --> A
   A --> M["Memory JSONL"]
   A --> R["Human review queue"]
   R --> P["Publisher plugins"]
@@ -57,7 +57,7 @@ reports issues. Never exposes secrets in API responses.
 
 ### LLM Layer (`llm/`)
 Abstract `LLMProvider` interface with two implementations:
-- `OpenAICompatibleProvider` — works with CC Switch, OpenAI, DeepSeek, Claude
+- `OpenAICompatibleProvider` — works with OpenAI-compatible APIs such as DeepSeek
 - `DemoLLMProvider` — deterministic local mode for testing without API keys
 
 ### Knowledge Layer (`knowledge/`)
@@ -132,6 +132,7 @@ See `config/demo.yaml` for a no-credentials demo configuration.
 ```bash
 uv sync --extra dev
 cp config/config.yaml config/local.yaml
+export DEEPSEEK_API_KEY="your-deepseek-api-key"
 OPENVIKING_AGENT_CONFIG=config/local.yaml uv run uvicorn backend.app.main:app --reload
 ```
 

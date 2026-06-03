@@ -3,7 +3,7 @@ log_level: INFO
 
 llm:
   provider: demo
-  base_url: http://localhost:3456/v1
+  base_url: https://api.deepseek.com
   api_key_env: DEMO_LLM_API_KEY
   model: demo-local-deterministic
   timeout_seconds: 10

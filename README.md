@@ -12,7 +12,7 @@ flowchart LR
   K --> A["Content agent"]
   C["config.yaml"] --> A
   S["Dynamic skills"] --> A
-  L["LLMProvider via CC Switch"] --> A
+  L["OpenAI-compatible LLM API"] --> A
   A --> M["Memory JSONL"]
   A --> R["Human review queue"]
   R --> P["Publisher plugins"]
@@ -48,6 +48,7 @@ data/
 ```bash
 uv sync --extra dev
 cp config/config.yaml config/local.yaml
+export DEEPSEEK_API_KEY="your-deepseek-api-key"
 OPENVIKING_AGENT_CONFIG=config/local.yaml uv run uvicorn backend.app.main:app --reload
 ```
 
@@ -127,14 +128,14 @@ a Docker healthcheck at `/api/health`.
 
 All deploy-time choices live in `config/config.yaml`:
 
-- LLM gateway base URL, model, and API key env var
+- OpenAI-compatible LLM base URL, model, and API key env var
 - OpenViking knowledge base path
 - Scheduler cron jobs
 - Scheduled OpenViking ingestion, generation, and approved-content publishing
 - Publisher accounts and credentials env vars
 - Human review and memory storage paths
 
-No API keys, model names, or publishing accounts should be hardcoded in code.
+No API keys or publishing accounts should be hardcoded in code.
 
 Default scheduled generation includes:
 

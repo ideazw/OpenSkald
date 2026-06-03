@@ -11,13 +11,14 @@ def test_app_boots_and_exposes_health_and_redacted_config(tmp_path: Path) -> Non
     config_path = tmp_path / "config.yaml"
     memory_path = tmp_path / "memory.jsonl"
     proposals_path = tmp_path / "skill_proposals.jsonl"
+    articles_path = tmp_path / "articles.jsonl"
     config_path.write_text(
         f"""
 environment: test
 log_level: INFO
 llm:
-  provider: cc_switch
-  base_url: http://localhost:3456/v1
+  provider: deepseek
+  base_url: https://api.deepseek.com
   api_key_env: TEST_SECRET_KEY
   model: smoke-model
 openviking:
@@ -30,6 +31,7 @@ scheduler: {{}}
 memory:
   storage_path: {memory_path}
   skill_proposals_path: {proposals_path}
+  article_index_path: {articles_path}
 """,
         encoding="utf-8",
     )

@@ -13,8 +13,8 @@ def _write_config(tmp_path: Path, knowledge_path: Path | None = None) -> Path:
 environment: test
 log_level: INFO
 llm:
-  provider: cc_switch
-  base_url: http://localhost:3456/v1
+  provider: deepseek
+  base_url: https://api.deepseek.com
   api_key_env: TEST_KEY
   model: test-model
 openviking:

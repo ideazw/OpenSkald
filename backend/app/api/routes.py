@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from backend.app.bootstrap import AppContainer
 from backend.app.config.settings import config_summary
 from backend.app.domain.models import ContentType, ReviewStatus
+from backend.app.llm.provider import LLMProviderError
 from backend.app.ops.status import operational_status
 
 router = APIRouter()
@@ -68,6 +69,8 @@ def build_router(container: AppContainer) -> APIRouter:
             content = await container.agent.generate(request.content_type, request.platforms)
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        except LLMProviderError as error:
+            raise HTTPException(status_code=502, detail=str(error)) from error
         return [item.model_dump(mode="json") for item in content]
 
     @api.post("/knowledge/ingest")

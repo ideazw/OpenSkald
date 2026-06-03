@@ -13,6 +13,10 @@ class LLMProvider(ABC):
         """Generate text from a model-compatible provider."""
 
 
+class LLMProviderError(RuntimeError):
+    """Raised when the configured LLM provider cannot generate text."""
+
+
 class OpenAICompatibleProvider(LLMProvider):
     def __init__(
         self,
@@ -24,9 +28,10 @@ class OpenAICompatibleProvider(LLMProvider):
         self.transport = transport
 
     async def generate(self, system_prompt: str, user_prompt: str) -> str:
+        if not self.api_key:
+            raise LLMProviderError(f"Missing LLM API key env var: {self.config.api_key_env}")
         headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        headers["Authorization"] = f"Bearer {self.api_key}"
         payload = {
             "model": self.config.model,
             "messages": [
@@ -39,14 +44,26 @@ class OpenAICompatibleProvider(LLMProvider):
             timeout=self.config.timeout_seconds,
             transport=self.transport,
         ) as client:
-            response = await client.post(
-                f"{self.config.base_url.rstrip('/')}/chat/completions",
-                headers=headers,
-                json=payload,
-            )
-            response.raise_for_status()
+            try:
+                response = await client.post(
+                    f"{self.config.base_url.rstrip('/')}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                )
+            except httpx.RequestError as error:
+                raise LLMProviderError(f"LLM provider request failed: {error}") from error
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as error:
+                detail = response.text[:1000]
+                raise LLMProviderError(
+                    f"LLM provider returned HTTP {response.status_code}: {detail}"
+                ) from error
             data = response.json()
-        return data["choices"][0]["message"]["content"]
+        try:
+            return data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as error:
+            raise LLMProviderError("LLM provider returned an unexpected response shape") from error
 
 
 class DemoLLMProvider(LLMProvider):
@@ -101,6 +118,6 @@ class DemoLLMProvider(LLMProvider):
 def build_llm_provider(config: LLMConfig) -> LLMProvider:
     if config.provider == "demo":
         return DemoLLMProvider()
-    if config.provider in {"cc_switch", "openai", "deepseek", "claude"}:
+    if config.provider in {"openai", "deepseek"}:
         return OpenAICompatibleProvider(config)
     raise ValueError(f"Unsupported LLM provider: {config.provider}")

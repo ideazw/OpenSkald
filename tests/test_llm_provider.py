@@ -3,7 +3,7 @@ import pytest
 
 from backend.app.config.settings import LLMConfig, PublisherConfig
 from backend.app.domain.models import ContentType, GeneratedContent
-from backend.app.llm.provider import DemoLLMProvider, OpenAICompatibleProvider
+from backend.app.llm.provider import DemoLLMProvider, LLMProviderError, OpenAICompatibleProvider
 from backend.app.publishers.x.publisher import PluginPublisher as XPublisher
 
 
@@ -26,7 +26,7 @@ async def test_openai_compatible_provider_posts_chat_completion(
 
     provider = OpenAICompatibleProvider(
         LLMConfig(
-            provider="cc_switch",
+            provider="deepseek",
             base_url="http://llm-gateway.local/v1",
             api_key_env="TEST_LLM_KEY",
             model="configured-model",
@@ -40,6 +40,43 @@ async def test_openai_compatible_provider_posts_chat_completion(
     assert captured["url"] == "http://llm-gateway.local/v1/chat/completions"
     assert captured["auth"] == "Bearer secret"
     assert "configured-model" in captured["json"]
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_provider_requires_api_key_env() -> None:
+    provider = OpenAICompatibleProvider(
+        LLMConfig(
+            provider="deepseek",
+            base_url="https://api.deepseek.com",
+            api_key_env="MISSING_TEST_LLM_KEY",
+            model="deepseek-v4-flash",
+        )
+    )
+
+    with pytest.raises(LLMProviderError, match="MISSING_TEST_LLM_KEY"):
+        await provider.generate("system", "user")
+
+
+@pytest.mark.asyncio
+async def test_openai_compatible_provider_reports_http_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"error": {"message": "invalid api key"}})
+
+    monkeypatch.setenv("TEST_LLM_KEY", "secret")
+    provider = OpenAICompatibleProvider(
+        LLMConfig(
+            provider="deepseek",
+            base_url="https://api.deepseek.com",
+            api_key_env="TEST_LLM_KEY",
+            model="deepseek-v4-flash",
+        ),
+        transport=httpx.MockTransport(handler),
+    )
+
+    with pytest.raises(LLMProviderError, match="HTTP 401"):
+        await provider.generate("system", "user")
 
 
 @pytest.mark.asyncio

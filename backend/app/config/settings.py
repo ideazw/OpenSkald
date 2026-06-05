@@ -67,7 +67,6 @@ class ConfigIssue(BaseModel):
 
 REQUIRED_PUBLISHER_CREDENTIALS = {
     "wechat": ["app_id", "app_secret", "thumb_media_id"],
-    "x": ["user_access_token"],
     "xiaohongshu": ["cookie"],
 }
 
@@ -189,6 +188,8 @@ def _validate_publisher_secret(platform: str, env_name: str) -> list[ConfigIssue
     missing = [
         key for key in REQUIRED_PUBLISHER_CREDENTIALS.get(platform, []) if not secret.get(key)
     ]
+    if platform == "x":
+        missing = _missing_x_credentials(secret)
     if missing:
         return [
             ConfigIssue(
@@ -200,6 +201,27 @@ def _validate_publisher_secret(platform: str, env_name: str) -> list[ConfigIssue
             )
         ]
     return []
+
+
+def _missing_x_credentials(secret: dict[str, Any]) -> list[str]:
+    if secret.get("user_access_token"):
+        return []
+    required_aliases = {
+        "consumer_key": ("consumer_key", "api_key", "oauth_consumer_key"),
+        "consumer_secret": (
+            "consumer_secret",
+            "api_secret",
+            "api_key_secret",
+            "oauth_consumer_secret",
+        ),
+        "access_token": ("access_token", "oauth_token"),
+        "access_token_secret": ("access_token_secret", "oauth_token_secret"),
+    }
+    return [
+        target
+        for target, aliases in required_aliases.items()
+        if not any(secret.get(alias) for alias in aliases)
+    ]
 
 
 def config_summary(config: AppConfig, issues: list[ConfigIssue] | None = None) -> dict[str, Any]:

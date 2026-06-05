@@ -266,25 +266,27 @@ Built-in publishers:
 - `blog`: writes Markdown files to the directory configured by `account_id`.
 - `wechat`: uses WeChat Official Account APIs when `dry_run: false`.
 - `x`: posts an X thread through the X API when `dry_run: false`.
-  Requires a User Access Token with write/post permission for `POST /2/tweets`.
+  Requires OAuth 1.0a User Context credentials, or an OAuth 2.0 User Context token,
+  with write/post permission for `POST /2/tweets`.
 - `xiaohongshu`: uses an experimental creator-web cookie adapter when `dry_run: false`.
   Verify with a real note publish before relying on it for unattended production.
 
 Production credential env vars must be JSON objects:
 
 ```bash
-export X_PUBLISHER_CREDENTIALS='{"user_access_token":"YOUR_USER_ACCESS_TOKEN"}'
+export X_PUBLISHER_CREDENTIALS='{"api_key":"YOUR_CONSUMER_KEY","api_key_secret":"YOUR_CONSUMER_SECRET","access_token":"YOUR_ACCESS_TOKEN","access_token_secret":"YOUR_ACCESS_TOKEN_SECRET"}'
 export WECHAT_PUBLISHER_CREDENTIALS='{"app_id":"wx_xxx","app_secret":"xxx","thumb_media_id":"xxx"}'
 export XIAOHONGSHU_PUBLISHER_CREDENTIALS='{"cookie":"YOUR_CREATOR_COOKIE"}'
 ```
 
-`user_access_token` is required for X. App-only bearer tokens are rejected because they
-cannot publish user tweets.
+For X, app permissions must be Read and Write, and Access Token and Secret must be
+regenerated after changing permissions. App-only bearer tokens are rejected because
+they cannot publish user tweets.
 
 X live-send checklist:
 
 ```bash
-export X_PUBLISHER_CREDENTIALS='{"user_access_token":"YOUR_USER_ACCESS_TOKEN"}'
+export X_PUBLISHER_CREDENTIALS='{"api_key":"YOUR_CONSUMER_KEY","api_key_secret":"YOUR_CONSUMER_SECRET","access_token":"YOUR_ACCESS_TOKEN","access_token_secret":"YOUR_ACCESS_TOKEN_SECRET"}'
 
 uv run OpenSkald --config config/config.yaml validate-config
 uv run OpenSkald --config config/config.yaml publisher-check --platform x

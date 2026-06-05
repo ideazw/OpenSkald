@@ -159,7 +159,47 @@ publishers:
     config = load_config(config_path)
     issues = validate_config(config)
 
-    assert any("missing keys: user_access_token" in issue.message for issue in issues)
+    assert any(
+        "missing keys: consumer_key, consumer_secret, access_token, access_token_secret"
+        in issue.message
+        for issue in issues
+    )
+
+
+def test_validate_config_accepts_x_oauth1_api_key_credentials(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("PROD_LLM_KEY", "secret")
+    monkeypatch.setenv(
+        "X_CREDS",
+        (
+            '{"api_key":"consumer","api_key_secret":"consumer_secret",'
+            '"access_token":"access","access_token_secret":"access_secret"}'
+        ),
+    )
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        f"""
+environment: production
+llm:
+  api_key_env: PROD_LLM_KEY
+  model: prod-model
+openviking:
+  knowledge_base_path: {tmp_path}
+publishers:
+  x:
+    enabled: true
+    dry_run: false
+    credentials_env: X_CREDS
+""",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+    issues = validate_config(config)
+
+    assert issues == []
 
 
 def test_validate_config_rejects_invalid_publisher_credentials_json(

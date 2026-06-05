@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
+import time
+from base64 import b64encode
+from hashlib import sha1
+from hmac import new as hmac_new
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -47,8 +53,7 @@ class PluginPublisher(Publisher):
         if self.config.dry_run:
             return {**base, "message": "dry-run mode; X API was not contacted"}
 
-        user_access_token = self._user_access_token()
-        headers = {"Authorization": f"Bearer {user_access_token}"}
+        headers = self._auth_headers("GET", ME_URL)
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.get(ME_URL, headers=headers)
         if response.status_code != 200:
@@ -77,13 +82,6 @@ class PluginPublisher(Publisher):
                 metadata={"account_id": self.config.account_id},
             )
 
-        user_access_token = self._user_access_token()
-
-        headers = {
-            "Authorization": f"Bearer {user_access_token}",
-            "Content-Type": "application/json",
-        }
-
         posts = [line.strip() for line in content.body.splitlines() if line.strip()]
         tweet_ids: list[str] = []
 
@@ -93,6 +91,8 @@ class PluginPublisher(Publisher):
                 if tweet_ids:
                     payload["reply"] = {"in_reply_to_tweet_id": tweet_ids[-1]}
 
+                headers = self._auth_headers("POST", TWEET_URL)
+                headers["Content-Type"] = "application/json"
                 resp = await client.post(TWEET_URL, headers=headers, json=payload)
 
                 if resp.status_code != 201:
@@ -117,10 +117,84 @@ class PluginPublisher(Publisher):
             },
         )
 
-    def _user_access_token(self) -> str:
+    def _auth_headers(self, method: str, url: str) -> dict[str, str]:
         creds = self._get_credentials()
         user_access_token = creds.get("user_access_token")
-        if not user_access_token:
-            logger.error("X user_access_token is missing from credentials")
-            raise RuntimeError("X user_access_token is required for publishing")
-        return str(user_access_token)
+        if user_access_token:
+            return {"Authorization": f"Bearer {user_access_token}"}
+
+        oauth1 = self._oauth1_credentials()
+        return {"Authorization": _build_oauth1_authorization_header(method, url, oauth1)}
+
+    def _oauth1_credentials(self) -> dict[str, str]:
+        creds = self._get_credentials()
+        aliases = {
+            "consumer_key": ("consumer_key", "api_key", "oauth_consumer_key"),
+            "consumer_secret": (
+                "consumer_secret",
+                "api_secret",
+                "api_key_secret",
+                "oauth_consumer_secret",
+            ),
+            "access_token": ("access_token", "oauth_token"),
+            "access_token_secret": ("access_token_secret", "oauth_token_secret"),
+        }
+        resolved: dict[str, str] = {}
+        missing: list[str] = []
+        for target, keys in aliases.items():
+            value = next((creds.get(key) for key in keys if creds.get(key)), None)
+            if value:
+                resolved[target] = str(value)
+            else:
+                missing.append(target)
+
+        if missing:
+            logger.error("X OAuth 1.0a credentials are missing keys: %s", ", ".join(missing))
+            raise RuntimeError(
+                "X credentials must include either user_access_token or OAuth 1.0a "
+                f"keys: {', '.join(missing)}"
+            )
+        return resolved
+
+
+def _percent_encode(value: str) -> str:
+    return quote(value, safe="~")
+
+
+def _build_oauth1_authorization_header(
+    method: str,
+    url: str,
+    credentials: dict[str, str],
+) -> str:
+    oauth_params = {
+        "oauth_consumer_key": credentials["consumer_key"],
+        "oauth_nonce": secrets.token_urlsafe(24),
+        "oauth_signature_method": "HMAC-SHA1",
+        "oauth_timestamp": str(int(time.time())),
+        "oauth_token": credentials["access_token"],
+        "oauth_version": "1.0",
+    }
+    encoded_params = "&".join(
+        f"{_percent_encode(key)}={_percent_encode(value)}"
+        for key, value in sorted(oauth_params.items())
+    )
+    signature_base = "&".join(
+        [_percent_encode(method.upper()), _percent_encode(url), _percent_encode(encoded_params)]
+    )
+    signing_key = "&".join(
+        [
+            _percent_encode(credentials["consumer_secret"]),
+            _percent_encode(credentials["access_token_secret"]),
+        ]
+    )
+    digest = hmac_new(
+        signing_key.encode("utf-8"),
+        signature_base.encode("utf-8"),
+        sha1,
+    ).digest()
+    oauth_params["oauth_signature"] = b64encode(digest).decode("ascii")
+    header_params = ", ".join(
+        f'{_percent_encode(key)}="{_percent_encode(value)}"'
+        for key, value in sorted(oauth_params.items())
+    )
+    return f"OAuth {header_params}"

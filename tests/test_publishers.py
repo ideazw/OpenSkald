@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import httpx
@@ -10,6 +11,7 @@ from backend.app.domain.models import ContentType, GeneratedContent
 from backend.app.publishers.blog.publisher import PluginPublisher as BlogPublisher
 from backend.app.publishers.wechat.publisher import PluginPublisher as WeChatPublisher
 from backend.app.publishers.x.publisher import PluginPublisher as XPublisher
+from backend.app.publishers.x.publisher import _build_oauth1_authorization_header
 from backend.app.publishers.xiaohongshu.publisher import PluginPublisher as XiaohongshuPublisher
 
 
@@ -180,6 +182,70 @@ async def test_x_publisher_posts_thread(monkeypatch: pytest.MonkeyPatch) -> None
     assert auth_log == ["Bearer test_token"] * 3
 
     monkeypatch.setattr(httpx.AsyncClient, "post", original_post)
+
+
+@pytest.mark.asyncio
+async def test_x_publisher_posts_with_oauth1_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "X_OAUTH1_CREDS",
+        json.dumps(
+            {
+                "consumer_key": "consumer",
+                "consumer_secret": "consumer_secret",
+                "access_token": "access",
+                "access_token_secret": "access_secret",
+            }
+        ),
+    )
+    auth_log: list[str | None] = []
+    original_post = httpx.AsyncClient.post
+
+    async def mock_post(self, url, **kwargs) -> httpx.Response:
+        auth_log.append(kwargs["headers"].get("Authorization"))
+        return httpx.Response(201, json={"data": {"id": "1234567890"}})
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
+    publisher = XPublisher(
+        PublisherConfig(dry_run=False, account_id="test-x", credentials_env="X_OAUTH1_CREDS"),
+    )
+    publisher.platform = "x"
+    content = GeneratedContent(
+        content_type=ContentType.DAILY_SUMMARY,
+        platform="x",
+        title="OAuth 1.0a",
+        body="Signed tweet",
+    )
+
+    result = await publisher.publish(content)
+
+    assert result.dry_run is False
+    assert auth_log
+    assert auth_log[0] is not None
+    assert auth_log[0].startswith("OAuth ")
+    assert 'oauth_consumer_key="consumer"' in auth_log[0]
+    assert 'oauth_token="access"' in auth_log[0]
+    assert "oauth_signature=" in auth_log[0]
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", original_post)
+
+
+def test_x_oauth1_authorization_header_uses_expected_format() -> None:
+    header = _build_oauth1_authorization_header(
+        "POST",
+        "https://api.x.com/2/tweets",
+        {
+            "consumer_key": "consumer",
+            "consumer_secret": "consumer_secret",
+            "access_token": "access",
+            "access_token_secret": "access_secret",
+        },
+    )
+
+    assert header.startswith("OAuth ")
+    assert 'oauth_signature_method="HMAC-SHA1"' in header
+    assert 'oauth_version="1.0"' in header
+    assert 'oauth_signature="' in header
 
 
 @pytest.mark.asyncio

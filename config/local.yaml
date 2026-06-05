@@ -72,14 +72,16 @@ publishers:
     credentials_env: WECHAT_PUBLISHER_CREDENTIALS
 
   # X (Twitter)
-  # Credentials: {"user_access_token":"xxx"}
-  # Required: User Access Token with write/post scope, not an app-only read bearer token.
-  # Get from: https://developer.x.com -> App -> User authentication settings / OAuth flow
-  # Set env: export X_PUBLISHER_CREDENTIALS='{"user_access_token":"xxx"}'
+  # Credentials:
+  # - OAuth 2.0: {"user_access_token":"xxx"}
+  # - OAuth 1.0a: {"api_key":"xxx","api_key_secret":"xxx","access_token":"xxx","access_token_secret":"xxx"}
+  # Required: User context token with write/post permission for POST /2/tweets.
+  # Get from: https://developer.x.com -> App -> Keys and tokens / User authentication settings
+  # Set env: export X_PUBLISHER_CREDENTIALS='{"api_key":"xxx","api_key_secret":"xxx","access_token":"xxx","access_token_secret":"xxx"}'
   x:
-    enabled: false
+    enabled: true
     account_id: null
-    dry_run: true
+    dry_run: false
     credentials_env: X_PUBLISHER_CREDENTIALS
 
   # Xiaohongshu

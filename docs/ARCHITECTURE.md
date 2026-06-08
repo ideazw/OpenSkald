@@ -1,149 +1,226 @@
-# Architecture
+# OpenSkald Architecture
 
-## Overview
+[Docs](README.md) · English / [中文](ARCHITECTURE_CN.md)
 
-OpenViking Content Agent is a self-hosted AI content automation platform. It reads
-technical articles from a local OpenViking knowledge base, generates reviewable content,
-and publishes through platform plugins.
+OpenSkald is a FastAPI and CLI application for converting a local knowledge base into
+reviewable, publishable content. It is organized around small, replaceable services:
+knowledge ingestion, declarative prompt skills, LLM generation, JSONL memory, human
+review, publisher plugins, and agent runtime tracking.
 
-## Architecture Diagram
+## System Diagram
 
 ```mermaid
 flowchart LR
-  KB["OpenViking knowledge base"] --> K["Knowledge adapter"]
-  K --> A["Content agent"]
-  C["config.yaml"] --> A
-  S["Dynamic skills"] --> A
-  L["OpenAI-compatible LLM API"] --> A
-  A --> M["Memory JSONL"]
-  A --> R["Human review queue"]
-  R --> P["Publisher plugins"]
-  P --> W["WeChat"]
-  P --> X["X"]
-  P --> XHS["Xiaohongshu"]
+  KB["Local Markdown/Text Knowledge"] --> K["OpenVikingKnowledgeBase"]
+  K --> KI["KnowledgeIngestionAgent"]
+  KI --> AM["Article Index JSONL"]
+  AM --> C["ContentAgent"]
+  K --> C
+  S["SkillRegistry"] --> C
+  L["LLMProvider"] --> C
+  C --> CM["Generated Content JSONL"]
+  C --> ER["Experience Records"]
+  CM --> R["Review API/CLI"]
+  R --> P["PublishingAgent"]
+  PR["PublisherRegistry"] --> P
+  P --> OUT["Blog / WeChat / X / Xiaohongshu"]
+  ER --> REF["ReflectionAgent"]
+  C --> RT["OpenSkaldAgentRuntime"]
+  P --> RT
+  REF --> RT
 ```
 
-## Directory Structure
+## Application Container
 
-```text
-backend/
-  app/
-    agents/       ContentAgent, PublishingAgent, SkillEvolutionAgent
-    api/          FastAPI routes (build_router)
-    config/       config.yaml loading and validation (Pydantic models)
-    domain/       Core models (Article, GeneratedContent, etc.)
-    knowledge/    OpenViking adapter (reads local markdown files)
-    llm/          LLMProvider interface (OpenAI-compatible + Demo)
-    memory/       JSONL-based MemoryStore
-    publishers/   Publisher plugins (wechat, x, xiaohongshu)
-    scheduler/    APScheduler cron jobs
-    skills/       Declarative skill plugins (YAML-driven)
-config/           Configuration files
-tests/            pytest test suite
-data/             Runtime data (memory, review queue, skill proposals)
-docs/             Documentation
-knowledge/        OpenViking knowledge base mount point
-```
+`backend/app/bootstrap.py` builds a single `AppContainer` that wires:
+
+- `AppConfig` and config issues.
+- `OpenVikingKnowledgeBase`.
+- `SkillRegistry`.
+- `PublisherRegistry`.
+- `MemoryStore`.
+- `MemoryBackend` is defined separately for future namespace-addressable memory backends,
+  but the current container wires `MemoryStore` directly.
+- `KnowledgeIngestionAgent`.
+- `ContentAgent`.
+- `PublishingAgent`.
+- `SkillEvolutionAgent`.
+- `ReflectionAgent`.
+- `GrowthAgent`.
+- `OpenSkaldAgentRuntime`.
+- `AsyncIOScheduler`.
+
+The FastAPI app and CLI use the same container construction path, so API behavior and CLI
+behavior share configuration, memory, publishers, and skills.
 
 ## Layers
 
-### Domain Layer (`domain/`)
-Pure Pydantic models with no framework dependencies. Defines `Article`,
-`GeneratedContent`, `ContentType`, `ReviewStatus`, `SkillProposal`, etc.
+### Domain
 
-### Config Layer (`config/`)
-Loads `config.yaml` into typed Pydantic models. Validates configuration and
-reports issues. Never exposes secrets in API responses.
+`backend/app/domain/models.py` defines the Pydantic models used across the project:
 
-### LLM Layer (`llm/`)
-Abstract `LLMProvider` interface with two implementations:
-- `OpenAICompatibleProvider` — works with OpenAI-compatible APIs such as DeepSeek
-- `DemoLLMProvider` — deterministic local mode for testing without API keys
+- Content models: `Article`, `GeneratedContent`, `PublishResult`.
+- Workflow enums: `ContentType`, `ReviewStatus`.
+- Skill governance: `SkillProposal`.
+- Memory and learning: `MemoryRecord`, `AgentExperience`, `AgentReflection`, `AgentMetric`.
+- Runtime tracking: `AgentMode`, `AgentRunStatus`, `AgentRun`, `AgentResult`.
+- Collaboration artifacts: `SourceBrief`, `PlatformDraft`, `ReviewReport`.
 
-### Knowledge Layer (`knowledge/`)
-`OpenVikingKnowledgeBase` reads markdown files from a local directory. Supports
-YAML frontmatter for title, tags, and URL. Returns `Article` objects sorted by
-modification time.
+### Config
 
-### Skill Layer (`skills/`)
-Each skill is a YAML file (`skill.yaml`) declaring:
-- `name`, `version`, `enabled`, `description`
-- `content_types` — which content types it handles
-- `platforms` — which platforms it targets (empty = generic)
-- `system_prompt` and `user_prompt_template` — LLM prompts with `{articles}` placeholder
+`backend/app/config/settings.py` loads YAML into typed config objects. The active config path
+comes from `--config`, then `OPENVIKING_AGENT_CONFIG`, then `config/config.yaml`.
 
-Skills are loaded at startup. Disabled skills are skipped. Platform-specific skills
-take priority over generic skills.
+Validation catches:
 
-### Memory Layer (`memory/`)
-`JsonlStore` provides append-only JSONL storage. `MemoryStore` manages content and
-skill proposals. All state is stored as JSONL files in `data/`.
+- Empty or missing knowledge paths.
+- Default model placeholders.
+- Missing production LLM API key environment variables.
+- Unsafe production review settings.
+- Invalid scheduler actions.
+- Missing publisher credentials in production.
 
-### Agent Layer (`agents/`)
-- `ContentAgent` — orchestrates knowledge retrieval, skill selection, LLM generation,
-  and memory storage
-- `PublishingAgent` — publishes approved content through publisher plugins with
-  validation
-- `SkillEvolutionAgent` — manages skill proposals with human gating (propose, approve,
-  reject). Approved proposals write disabled skill drafts.
+`config_summary()` returns redacted operator-safe config. It includes env var names and
+boolean configured flags, never secret values.
 
-### Publisher Layer (`publishers/`)
-Each publisher is a `PluginPublisher` class extending `DryRunPublisher`. Publishers:
-- Validate content against platform rules before publishing
-- Default to dry-run mode (no real API calls)
-- Can be replaced with real API clients without changing core code
+### Knowledge
 
-### API Layer (`api/`)
-FastAPI routes for health, config, generation, review, publishing, and skill proposals.
-All routes return JSON. Secrets are never exposed.
+`backend/app/knowledge/openviking.py` reads local files using configured globs. Markdown
+front matter can provide `title`, `tags`, and `url`. Article IDs are stable hashes of the
+absolute source path.
 
-### Scheduler Layer (`scheduler/`)
-APScheduler cron jobs for periodic content generation and approved content publishing.
+Articles are sorted by modification time and limited by `max_articles_per_run`.
 
-## Adding a New Platform
+### LLM
 
-1. Create `backend/app/publishers/<platform>/__init__.py`
-2. Create `backend/app/publishers/<platform>/publisher.py` with `PluginPublisher` class
-3. Add publisher config to `config.yaml` under `publishers.<platform>`
-4. Optionally create platform-specific skills in `backend/app/skills/<platform>_writer/`
+`backend/app/llm/provider.py` provides:
 
-## Adding a New Skill
+- `OpenAICompatibleProvider` for providers such as DeepSeek or OpenAI-compatible gateways.
+- `DemoLLMProvider` for deterministic local tests and demos.
 
-1. Create `backend/app/skills/<skill_name>/skill.yaml`
-2. Define `content_types`, `platforms`, and prompts
-3. Restart the application to load the new skill
+The OpenAI-compatible provider calls `{base_url}/chat/completions` with a system prompt and
+user prompt. Missing keys, request failures, HTTP errors, and unexpected response shapes are
+reported as `LLMProviderError`.
 
-## Adding a New Content Type
+### Skills
 
-1. Add the content type to `ContentType` enum in `domain/models.py`
-2. Create skill(s) that declare the new content type
-3. Add scheduler job config in `config.yaml`
+`backend/app/skills/base.py` loads `*/skill.yaml` definitions into `PromptSkill` instances.
+A skill declares:
 
-## Configuration
+- `name`, `version`, `enabled`, `description`.
+- Supported `content_types`.
+- Optional target `platforms`.
+- `system_prompt`.
+- `user_prompt_template` with an `{articles}` placeholder.
 
-All settings live in `config/config.yaml`. No secrets, model names, or account IDs are
-hardcoded in code. Environment variables are referenced by name and resolved at runtime.
+Platform-specific skills take priority over generic skills. Disabled skills are skipped.
 
-See `config/demo.yaml` for a no-credentials demo configuration.
+### Memory
 
-## Deployment
+`backend/app/memory/store.py` stores state in JSONL:
 
-### Local Development
-```bash
-uv sync --extra dev
-cp config/config.yaml config/local.yaml
-export DEEPSEEK_API_KEY="your-deepseek-api-key"
-OPENVIKING_AGENT_CONFIG=config/local.yaml uv run uvicorn backend.app.main:app --reload
-```
+- `memory.storage_path`: generated content.
+- `memory.skill_proposals_path`: skill proposals.
+- `memory.article_index_path`: indexed articles.
+- `memory_records.jsonl`: namespaced memory records and agent runs in the same data directory.
+- `review.storage_path` is part of config and appears in redacted summaries, but generated
+  content review status is currently persisted with content in `memory.storage_path`.
 
-### Docker
-```bash
-docker compose up --build
-```
+`MemoryStore` supports article indexing, generated content lookup, review status updates,
+content summaries, failure listing, timeline views, full-text substring search, skill proposal
+updates, namespaced memory records, reflections, and experiences.
 
-### CLI
-```bash
-uv run OpenSkald --config config/local.yaml validate-config
-uv run OpenSkald --config config/local.yaml generate-once \
-  --content-type daily_summary --platform x
-```
+`backend/app/memory/backend.py` defines a `MemoryBackend` interface, a local
+`JsonlMemoryBackend`, and an `OpenVikingMemoryBackend` placeholder. The remote backend
+currently delegates to local JSONL fallback and exists as a future extension contract.
+
+### Agents
+
+Core agents:
+
+- `KnowledgeIngestionAgent`: imports recent knowledge articles into the article index.
+- `ContentAgent`: selects articles, chooses skills, calls the LLM, stores drafts, and records
+  generation experiences.
+- `PublishingAgent`: validates and publishes approved content, updates content status, and
+  records publish failures or successes.
+- `SkillEvolutionAgent`: creates, discovers, approves, and rejects skill proposals. Approved
+  proposals write disabled draft skills.
+- `ReflectionAgent`: distills memory experiences into reflection records.
+- `GrowthAgent`: imports external metrics.
+- `OpenSkaldAgentRuntime`: wraps single or collaborative runs, records run state, artifacts,
+  errors, latency, and memory writes. Single mode delegates to `ContentAgent`; collaborative
+  mode uses `MultiAgentOrchestrator` to research, write, review, optionally revise, store
+  `pending_review` content, reflect, and run growth analysis. It does not auto-publish.
+
+### Publishers
+
+`PublisherRegistry` loads `backend.app.publishers.<platform>.publisher.PluginPublisher` for
+each configured platform. Built-in publishers are:
+
+- `blog`: writes Markdown files locally.
+- `wechat`: creates WeChat drafts and submits them when not dry-run.
+- `x`: posts tweet threads using a user access token or OAuth 1.0a credentials.
+- `xiaohongshu`: uses an experimental creator-web cookie adapter.
+
+Each publisher validates platform-specific constraints before publishing. Failed validation
+does not mark content as published; errors are persisted in content metadata.
+
+### API
+
+`backend/app/api/routes.py` exposes routes under `/api` for:
+
+- Health, config summary, and operational status.
+- Knowledge ingestion, article listing, and article search.
+- Content generation.
+- Review approval and rejection.
+- Content summaries, failures, memory timeline, memory search, memory records, and reflections.
+- Metrics import.
+- Agent runs.
+- Publisher checks, validation, and publishing.
+- Skill proposal governance.
+
+See [API Reference](API.md) for the full endpoint guide.
+
+### Scheduler
+
+`backend/app/scheduler/jobs.py` maps five-field cron expressions to APScheduler jobs.
+Supported actions:
+
+- `ingest_knowledge`.
+- `generate`.
+- `publish_approved`.
+
+The scheduler starts during FastAPI lifespan only when configured jobs exist.
+
+## Extension Points
+
+### Add A Publisher
+
+1. Create `backend/app/publishers/<platform>/__init__.py`.
+2. Create `backend/app/publishers/<platform>/publisher.py`.
+3. Implement `PluginPublisher(Publisher)`.
+4. Add the platform under `publishers` in the config.
+5. Add one or more platform skills if the content format is platform-specific.
+
+### Add A Skill
+
+1. Create `backend/app/skills/<skill_name>/skill.yaml`.
+2. Declare supported `content_types` and optional `platforms`.
+3. Include a `system_prompt` and a `user_prompt_template` with `{articles}`.
+4. Restart the service or rerun the CLI so `SkillRegistry` reloads it.
+
+### Add A Content Type
+
+1. Add a value to `ContentType`.
+2. Add skills that support it.
+3. Add scheduler jobs or API calls that use it.
+4. Add tests for generation and any platform validation changes.
+
+## Operational Guarantees
+
+- Config summaries are redacted.
+- Human approval is enabled by default.
+- Generation never silently creates empty drafts; it fails when no articles are available.
+- Publish validation happens before platform calls.
+- Publish failures leave content retryable.
+- Runtime state is append-only in JSONL and can be queried by run ID.

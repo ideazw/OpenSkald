@@ -1,49 +1,93 @@
-# OpenViking Content Agent
+<div align="center">
 
-OpenViking Content Agent is a lightweight, self-hosted AI content automation platform.
-It reads technical articles from a local OpenViking knowledge base, generates reviewable
-content, and publishes through platform plugins.
+<a href="https://github.com/skyloevil/OpenSkald" target="_blank">
+  <picture>
+    <img alt="OpenSkald" src="docs/images/OpenSkald-LOGO.png" width="200px" height="auto">
+  </picture>
+</a>
 
-## Architecture
+### OpenSkald: Self-hosted content automation for AI knowledge workflows
+
+English / [中文](README_CN.md)
+
+<a href="https://github.com/skyloevil/OpenSkald">GitHub</a> · <a href="https://github.com/skyloevil/OpenSkald/issues">Issues</a> · <a href="./docs/README.md">Docs</a> · <a href="./docs/API.md">API</a>
+
+[![][release-shield]][release-link]
+[![][github-stars-shield]][github-stars-link]
+[![][github-issues-shield]][github-issues-shield-link]
+[![][github-contributors-shield]][github-contributors-link]
+[![][license-shield]][license-shield-link]
+[![][last-commit-shield]][last-commit-shield-link]
+
+</div>
+
+***
+
+OpenSkald turns a local knowledge base into reviewable, publishable content. It reads
+Markdown/text notes, generates drafts with declarative prompt skills and an
+OpenAI-compatible LLM, stores state in JSONL memory, requires human approval by default,
+and publishes through platform plugins.
+
+It is built for teams that want a small, inspectable content agent rather than a black-box
+SaaS workflow.
+
+## Highlights
+
+- FastAPI service and JSON-output CLI share the same runtime.
+- No-credentials demo mode uses a deterministic local LLM provider.
+- Supports local blog Markdown, WeChat Official Account, X threads, and Xiaohongshu notes.
+- Built-in review queue keeps generated content in `pending_review` until approval.
+- Publisher validation runs before real platform calls.
+- Runtime memory tracks indexed articles, generated content, failures, reflections,
+  metrics, skill proposals, and agent runs.
+- APScheduler jobs can ingest knowledge, generate drafts, and publish approved content.
+
+## Documentation
+
+| Document | Purpose |
+| --- | --- |
+| [Documentation Index](docs/README.md) | Complete documentation map |
+| [API Reference](docs/API.md) | REST endpoints, request bodies, responses, errors, and curl examples |
+| [Architecture](docs/ARCHITECTURE.md) | Module layout, container wiring, agents, publishers, memory, and extension points |
+| [Contributing](CONTRIBUTING.md) | Local development workflow |
+| [Security](SECURITY.md) | Credential handling and vulnerability reporting |
+
+## How It Works
 
 ```mermaid
 flowchart LR
-  KB["OpenViking knowledge base"] --> K["Knowledge adapter"]
-  K --> A["Content agent"]
-  C["config.yaml"] --> A
-  S["Dynamic skills"] --> A
-  L["OpenAI-compatible LLM API"] --> A
-  A --> M["Memory JSONL"]
-  A --> R["Human review queue"]
-  R --> P["Publisher plugins"]
-  P --> B["Blog Markdown"]
+  K["Local knowledge files"] --> I["Ingest"]
+  I --> M["JSONL memory"]
+  M --> G["Generate drafts"]
+  S["YAML skills"] --> G
+  L["LLM provider"] --> G
+  G --> R["Human review"]
+  R --> P["Publish"]
+  P --> B["Blog"]
   P --> W["WeChat"]
   P --> X["X"]
-  P --> XHS["Xiaohongshu"]
-```
-
-## Directory Structure
-
-```text
-backend/
-  app/
-    agents/       # Agent orchestration
-    api/          # FastAPI routes
-    config/       # config.yaml loading and validation
-    domain/       # Core models
-    knowledge/    # OpenViking adapter
-    llm/          # LLMProvider interface
-    memory/       # Memory and skill proposal storage
-    publishers/   # Publisher plugins
-    scheduler/    # Cron jobs
-    skills/       # Declarative skill plugins
-config/
-tests/
-knowledge/
-data/
+  P --> H["Xiaohongshu"]
 ```
 
 ## Quick Start
+
+Run the demo first. It needs no API key and uses `examples/knowledge/`.
+
+```bash
+uv sync --extra dev
+bash scripts/demo.sh
+```
+
+Run the acceptance check:
+
+```bash
+bash scripts/check.sh
+```
+
+The check runs pytest, Ruff, config validation, knowledge ingestion, status checks,
+publisher checks, content generation, and review queue listing.
+
+## Run The API
 
 ```bash
 uv sync --extra dev
@@ -52,31 +96,7 @@ export DEEPSEEK_API_KEY="your-deepseek-api-key"
 OPENVIKING_AGENT_CONFIG=config/local.yaml uv run uvicorn backend.app.main:app --reload
 ```
 
-For a no-credentials demo with sample knowledge and a deterministic local LLM:
-
-```bash
-bash scripts/demo.sh
-```
-
-This uses `config/demo.yaml`, reads `examples/knowledge/`, writes reviewable drafts to
-`data/demo-memory.jsonl`, and keeps all publishers in dry-run mode.
-
-Run the local acceptance check before publishing changes:
-
-```bash
-bash scripts/check.sh
-```
-
-The check runs the test suite, Ruff, demo config validation, OpenViking ingestion, status,
-publisher checks, generation, and review queue listing. You can pass another config path:
-
-```bash
-bash scripts/check.sh config/local.yaml
-```
-
-The same acceptance check runs in GitHub Actions on pushes and pull requests.
-
-Then open:
+Health and config:
 
 ```bash
 curl http://localhost:8000/api/health
@@ -84,246 +104,162 @@ curl http://localhost:8000/api/status
 curl http://localhost:8000/api/config/summary
 ```
 
-Generate content:
+Generate, review, and publish:
 
 ```bash
 curl -X POST http://localhost:8000/api/knowledge/ingest
+
 curl -X POST http://localhost:8000/api/generate \
   -H "Content-Type: application/json" \
-  -d '{"content_type":"daily_summary","platforms":["blog","wechat","x","xiaohongshu"]}'
-```
+  -d '{"content_type":"daily_summary","platforms":["blog","x"]}'
 
-Review and approve content:
-
-```bash
-curl http://localhost:8000/api/review
-curl "http://localhost:8000/api/review?status=pending_review&platform=x"
+curl "http://localhost:8000/api/review?status=pending_review"
 curl -X POST http://localhost:8000/api/review/<content_id>/approve
-curl -X POST http://localhost:8000/api/review/<content_id>/reject \
-  -H "Content-Type: application/json" \
-  -d '{"reason":"Needs more source detail before publishing."}'
+curl http://localhost:8000/api/publish/blog/<content_id>/validate
+curl -X POST http://localhost:8000/api/publish/blog/<content_id>
 ```
 
-Publish approved content:
+See [docs/API.md](docs/API.md) for all endpoints and examples.
+
+## CLI
 
 ```bash
-curl http://localhost:8000/api/publishers/x/check
-curl http://localhost:8000/api/publish/x/<content_id>/validate
-curl -X POST http://localhost:8000/api/publish/x/<content_id>
+uv run OpenSkald --config config/demo.yaml validate-config
+uv run OpenSkald --config config/demo.yaml status
+uv run OpenSkald --config config/demo.yaml knowledge-ingest
+uv run OpenSkald --config config/demo.yaml generate-once \
+  --content-type daily_summary \
+  --platform blog \
+  --platform x
+uv run OpenSkald --config config/demo.yaml review-list --status pending_review
+uv run OpenSkald --config config/demo.yaml review-approve --content-id <content_id>
+uv run OpenSkald --config config/demo.yaml publish-content --content-id <content_id>
+uv run OpenSkald --config config/demo.yaml content-failures
+uv run OpenSkald --config config/demo.yaml memory-search --query retrieval
 ```
+
+Useful inspection commands:
+
+```bash
+uv run OpenSkald --config config/demo.yaml config-summary
+uv run OpenSkald --config config/demo.yaml content-summary
+uv run OpenSkald --config config/demo.yaml memory-timeline --limit 10
+uv run OpenSkald --config config/demo.yaml publisher-check-all
+uv run OpenSkald --config config/demo.yaml skills-discover
+uv run OpenSkald --config config/demo.yaml reflections-discover
+```
+
+## Configuration
+
+Config is loaded from `--config`, then `OPENVIKING_AGENT_CONFIG`, then
+`config/config.yaml`. The environment variable name is historical and remains the active
+config variable in the current code.
+
+Important sections:
+
+- `llm`: provider, base URL, model, timeout, and API key environment variable.
+- `openviking`: local knowledge path, include globs, and article limit.
+- `scheduler`: cron jobs for ingestion, generation, and publishing.
+- `publishers`: platform enablement, dry-run mode, account ID, and credentials env var.
+- `review`: human approval gate and configured review queue path. Current generated
+  content review state is stored with content in `memory.storage_path`.
+- `memory`: JSONL paths for content, skill proposals, and indexed articles.
+- `agent`: runtime mode, workspace ID, reflection, and collaboration settings.
+
+Config summaries are redacted: secret values are never returned by the API or CLI.
+
+## Knowledge Input
+
+OpenSkald reads Markdown and text files from the configured knowledge path. Markdown can
+include front matter:
+
+```markdown
+---
+title: RAG Operations
+tags:
+  - rag
+  - agents
+url: https://example.com/source
+---
+
+# RAG Operations
+
+Production retrieval needs memory, review, and reliable publishing checks.
+```
+
+Generation uses indexed articles first. If the index is empty, it falls back to the
+configured knowledge path.
+
+## Publishers
+
+| Platform | Behavior |
+| --- | --- |
+| `blog` | Writes Markdown files to the configured local output directory |
+| `wechat` | Publishes through WeChat Official Account APIs when `dry_run: false` |
+| `x` | Posts one non-empty body line per tweet when `dry_run: false` |
+| `xiaohongshu` | Uses an experimental creator-web cookie adapter when `dry_run: false` |
+
+Production credential env vars must be JSON objects:
+
+```bash
+export WECHAT_PUBLISHER_CREDENTIALS='{"app_id":"wx_xxx","app_secret":"xxx","thumb_media_id":"xxx"}'
+export X_PUBLISHER_CREDENTIALS='{"user_access_token":"USER_TOKEN_WITH_WRITE_SCOPE"}'
+export XIAOHONGSHU_PUBLISHER_CREDENTIALS='{"cookie":"YOUR_CREATOR_COOKIE"}'
+```
+
+Keep external publishers in `dry_run: true` until `publisher-check` succeeds and a real
+account-level publish has been verified.
+
+## Skills
+
+Skills are YAML prompt modules in `backend/app/skills/<skill_name>/skill.yaml`.
+Platform-specific skills take priority over generic skills.
+
+| Skill | Content Types | Platforms |
+| --- | --- | --- |
+| `article_summary` | `daily_summary`, `weekly_summary` | generic |
+| `tech_analysis` | `hot_topic_analysis`, `deep_technical_analysis` | generic |
+| `blog_writer` | all content types | `blog` |
+| `wechat_writer` | all content types | `wechat` |
+| `x_writer` | all content types | `x` |
+| `xiaohongshu_writer` | all content types | `xiaohongshu` |
+
+Skill proposals are human-gated. Approved proposals create disabled draft skills, so a
+human still has to review and enable them deliberately.
 
 ## Docker
-
-Edit `config/config.yaml`, then run one startup command:
 
 ```bash
 docker compose up --build
 ```
 
-Mount your OpenViking export or vault at `./knowledge`.
-The container runs `OpenSkald validate-config` before starting the API and exposes
-a Docker healthcheck at `/api/health`.
-
-## Configuration
-
-All deploy-time choices live in `config/config.yaml`:
-
-- OpenAI-compatible LLM base URL, model, and API key env var
-- OpenViking knowledge base path
-- Scheduler cron jobs
-- Scheduled OpenViking ingestion, generation, and approved-content publishing
-- Publisher accounts and credentials env vars
-- Human review and memory storage paths
-
-No API keys or publishing accounts should be hardcoded in code.
-
-Default scheduled generation includes:
-
-- Daily Summary
-- Weekly Summary
-- Hot Topic Analysis
-- Deep Technical Analysis
-
-OpenViking articles are indexed by the `ingest_knowledge` schedule into
-`memory.article_index_path`. Approved content is picked up by the `publish_approved`
-schedule.
-
-Generation uses the indexed articles first. If the index is empty, the agent falls back to
-the configured OpenViking path. If both are empty, generation fails with a clear error instead
-of creating empty drafts.
-
-`/api/config/summary` returns a redacted runtime summary:
-
-- Secret values are never returned.
-- Secret environment variable names are shown so operators can fix deployment.
-- Missing OpenViking paths and unsafe production settings are reported as issues.
-- `/api/health` reports `degraded` when configuration warnings or errors exist.
-
-## Operator CLI
-
-The CLI uses the same services as the FastAPI app and prints JSON for automation:
-
-```bash
-uv run OpenSkald --config config/local.yaml validate-config
-uv run OpenSkald --config config/local.yaml config-summary
-uv run OpenSkald --config config/local.yaml status
-uv run OpenSkald --config config/local.yaml knowledge-ingest
-uv run OpenSkald --config config/local.yaml generate-once \
-  --content-type daily_summary \
-  --platform blog \
-  --platform x \
-  --platform wechat
-uv run OpenSkald --config config/local.yaml knowledge-list --query rag
-uv run OpenSkald --config config/local.yaml review-list --status pending_review
-uv run OpenSkald --config config/local.yaml content-summary
-uv run OpenSkald --config config/local.yaml content-failures
-uv run OpenSkald --config config/local.yaml memory-timeline --limit 10
-uv run OpenSkald --config config/local.yaml memory-search --query retrieval
-uv run OpenSkald --config config/local.yaml skills-discover
-uv run OpenSkald --config config/local.yaml review-approve --content-id <content_id>
-uv run OpenSkald --config config/local.yaml publisher-check --platform x
-uv run OpenSkald --config config/local.yaml publisher-check-all
-uv run OpenSkald --config config/local.yaml publish-content --content-id <content_id>
-uv run OpenSkald --config config/local.yaml publish-approved --platform x
-```
-
-If publishing fails, the content remains `approved` and the error is stored in
-`metadata.last_publish_error`. Fix credentials or platform permissions, then retry the same
-`content_id`.
-
-Failure inspection:
-
-```bash
-uv run OpenSkald --config config/local.yaml status
-uv run OpenSkald --config config/local.yaml content-summary
-uv run OpenSkald --config config/local.yaml content-failures --platform x
-curl http://localhost:8000/api/status
-curl http://localhost:8000/api/content/summary
-curl "http://localhost:8000/api/content/failures?platform=x"
-```
-
-Memory inspection:
-
-```bash
-uv run OpenSkald --config config/local.yaml knowledge-ingest
-uv run OpenSkald --config config/local.yaml knowledge-list --query "openviking"
-curl -X POST http://localhost:8000/api/knowledge/ingest
-curl "http://localhost:8000/api/knowledge/search?q=openviking"
-uv run OpenSkald --config config/local.yaml memory-timeline --platform x
-uv run OpenSkald --config config/local.yaml memory-search --query "review edit"
-curl "http://localhost:8000/api/memory/timeline?platform=x&limit=10"
-curl "http://localhost:8000/api/memory/search?q=review%20edit"
-```
-
-## Adding a Skill
-
-Create a folder under `backend/app/skills/<skill_name>/skill.yaml`.
-Skills are declarative prompt modules and are loaded at startup.
-
-Skill proposals are human-gated. Approved proposals create disabled drafts:
-
-```bash
-curl -X POST http://localhost:8000/api/skills/proposals \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title":"Architecture comparison writer",
-    "reason":"Repeated architecture comparison posts need a reusable prompt.",
-    "proposed_skill_name":"architecture_comparison_writer",
-    "draft_prompt":"Compare these articles and produce a practical architecture note.\n\n{articles}",
-    "content_types":["deep_technical_analysis"],
-    "platforms":["wechat"]
-  }'
-
-curl http://localhost:8000/api/skills/proposals
-curl -X POST http://localhost:8000/api/skills/proposals/<proposal_id>/approve \
-  -H "Content-Type: application/json" \
-  -d '{"note":"Draft only. Review prompt before enabling."}'
-```
-
-Generated skill drafts are written with `enabled: false`; they are never auto-executed.
-
-The agent can also discover proposals from memory:
-
-```bash
-uv run OpenSkald --config config/local.yaml skills-discover
-curl -X POST http://localhost:8000/api/skills/proposals/discover
-```
-
-Discovery only creates pending proposals. A human must approve a proposal before a disabled
-skill draft is materialized, and the draft remains `enabled: false` until edited deliberately.
-
-## Adding a Publisher
-
-Create `backend/app/publishers/<platform>/publisher.py` with a `PluginPublisher` class.
-The core orchestration does not need to change.
-
-Each publisher can implement `validate(content)` to enforce platform rules before a
-post is published. Validation failures are stored in content metadata and do not
-change the item to `published`.
-
-Built-in publishers:
-
-- `blog`: writes Markdown files to the directory configured by `account_id`.
-- `wechat`: uses WeChat Official Account APIs when `dry_run: false`.
-- `x`: posts an X thread through the X API when `dry_run: false`.
-  Requires OAuth 1.0a User Context credentials, or an OAuth 2.0 User Context token,
-  with write/post permission for `POST /2/tweets`.
-- `xiaohongshu`: uses an experimental creator-web cookie adapter when `dry_run: false`.
-  Verify with a real note publish before relying on it for unattended production.
-
-Production credential env vars must be JSON objects:
-
-```bash
-export X_PUBLISHER_CREDENTIALS='{"api_key":"YOUR_CONSUMER_KEY","api_key_secret":"YOUR_CONSUMER_SECRET","access_token":"YOUR_ACCESS_TOKEN","access_token_secret":"YOUR_ACCESS_TOKEN_SECRET"}'
-export WECHAT_PUBLISHER_CREDENTIALS='{"app_id":"wx_xxx","app_secret":"xxx","thumb_media_id":"xxx"}'
-export XIAOHONGSHU_PUBLISHER_CREDENTIALS='{"cookie":"YOUR_CREATOR_COOKIE"}'
-```
-
-For X, app permissions must be Read and Write, and Access Token and Secret must be
-regenerated after changing permissions. App-only bearer tokens are rejected because
-they cannot publish user tweets.
-
-X live-send checklist:
-
-```bash
-export X_PUBLISHER_CREDENTIALS='{"api_key":"YOUR_CONSUMER_KEY","api_key_secret":"YOUR_CONSUMER_SECRET","access_token":"YOUR_ACCESS_TOKEN","access_token_secret":"YOUR_ACCESS_TOKEN_SECRET"}'
-
-uv run OpenSkald --config config/config.yaml validate-config
-uv run OpenSkald --config config/config.yaml publisher-check --platform x
-uv run OpenSkald --config config/config.yaml generate-once \
-  --content-type daily_summary \
-  --platform x
-uv run OpenSkald --config config/config.yaml review-list \
-  --status pending_review \
-  --platform x
-uv run OpenSkald --config config/config.yaml review-approve --content-id <content_id>
-uv run OpenSkald --config config/config.yaml publish-content --content-id <content_id>
-```
-
-API equivalent:
-
-```bash
-curl http://localhost:8000/api/publishers/x/check
-curl http://localhost:8000/api/publishers/checks
-curl -X POST http://localhost:8000/api/review/<content_id>/approve
-curl -X POST http://localhost:8000/api/publish/x/<content_id>
-```
-
-For production, keep `enabled: false` until credentials and platform permissions are verified.
-The app validates production config and reports missing credentials before startup checks pass.
+The container mounts `./config/config.yaml`, `./knowledge`, and `./data`, validates config
+before startup, serves on port `8000`, and healthchecks `/api/health`.
 
 ## Production Notes
 
-- Keep `review.require_human_approval` enabled for publishing accounts.
-- Run behind a reverse proxy with TLS.
+- Keep `review.require_human_approval: true` for publishing accounts.
+- Run behind a TLS reverse proxy.
 - Store secrets in environment variables or a secret manager.
-- Persist `./data` on durable storage.
-- Start with the `blog` publisher and dry-run external publishers.
-- Enable WeChat/X/Xiaohongshu one platform at a time after real account-level tests.
-- Keep generated `data/` and local `knowledge/` out of Git unless publishing sample fixtures.
+- Persist `./data`; it contains memory, review state, article indexes, and run records.
+- Enable real publishers one platform at a time after dry-run checks and manual review.
+- Keep generated `data/` and private `knowledge/` out of Git unless publishing fixtures.
 
-## Contributing
+## License
 
-See `CONTRIBUTING.md` for development workflow and `SECURITY.md` for credential and
-vulnerability reporting guidance. The repository includes an MIT license; maintainers
-should confirm it matches the intended release policy before publishing.
+OpenSkald is released under the [MIT License](LICENSE).
+
+<!-- Link Definitions -->
+
+[release-shield]: https://img.shields.io/github/v/release/skyloevil/OpenSkald?color=369eff&labelColor=black&logo=github&style=flat-square
+[release-link]: https://github.com/skyloevil/OpenSkald/releases
+[license-shield]: https://img.shields.io/badge/license-MIT-white?labelColor=black&style=flat-square
+[license-shield-link]: https://github.com/skyloevil/OpenSkald/blob/main/LICENSE
+[last-commit-shield]: https://img.shields.io/github/last-commit/skyloevil/OpenSkald?color=c4f042&labelColor=black&style=flat-square
+[last-commit-shield-link]: https://github.com/skyloevil/OpenSkald/commits/main
+[github-stars-shield]: https://img.shields.io/github/stars/skyloevil/OpenSkald?labelColor&style=flat-square&color=ffcb47
+[github-stars-link]: https://github.com/skyloevil/OpenSkald
+[github-issues-shield]: https://img.shields.io/github/issues/skyloevil/OpenSkald?labelColor=black&style=flat-square&color=ff80eb
+[github-issues-shield-link]: https://github.com/skyloevil/OpenSkald/issues
+[github-contributors-shield]: https://img.shields.io/github/contributors/skyloevil/OpenSkald?color=c4f042&labelColor=black&style=flat-square
+[github-contributors-link]: https://github.com/skyloevil/OpenSkald/graphs/contributors

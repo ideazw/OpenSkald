@@ -6,8 +6,11 @@ from pathlib import Path
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from backend.app.agents.content_agent import ContentAgent
+from backend.app.agents.growth_agent import GrowthAgent
 from backend.app.agents.knowledge_ingestion_agent import KnowledgeIngestionAgent
 from backend.app.agents.publishing_agent import PublishingAgent
+from backend.app.agents.reflection_agent import ReflectionAgent
+from backend.app.agents.runtime import OpenSkaldAgentRuntime
 from backend.app.agents.skill_evolution_agent import SkillEvolutionAgent
 from backend.app.config.settings import AppConfig, ConfigIssue, load_config, validate_config
 from backend.app.domain.models import GeneratedContent
@@ -30,6 +33,9 @@ class AppContainer:
     agent: ContentAgent
     publishing_agent: PublishingAgent
     skill_evolution_agent: SkillEvolutionAgent
+    reflection_agent: ReflectionAgent
+    growth_agent: GrowthAgent
+    runtime: OpenSkaldAgentRuntime
     scheduler: AsyncIOScheduler
     config_issues: list[ConfigIssue]
 
@@ -40,6 +46,17 @@ class AppContainer:
         return any(issue.level == "error" for issue in self.config_issues)
 
 
+def _build_agent_llm(config, key: str):
+    """Build a per-agent LLM provider, falling back to global config."""
+    partial = getattr(config.agent_llm, key, None)
+    if partial:
+        overrides = partial.model_dump(exclude_none=True)
+        if overrides:
+            merged = config.llm.model_copy(update=overrides)
+            return build_llm_provider(merged)
+    return build_llm_provider(config.llm)
+
+
 def build_container(config_path: str | None = None) -> AppContainer:
     config = load_config(config_path)
     config_issues = validate_config(config)
@@ -48,16 +65,29 @@ def build_container(config_path: str | None = None) -> AppContainer:
     skills.load()
     publishers = PublisherRegistry(config.publishers)
     publishers.load()
-    llm = build_llm_provider(config.llm)
+    content_llm = _build_agent_llm(config, "content")
+    reflection_llm = _build_agent_llm(config, "reflection")
+    writing_llm = _build_agent_llm(config, "writing")
     memory = MemoryStore(
         config.memory.storage_path,
         config.memory.skill_proposals_path,
         config.memory.article_index_path,
     )
     knowledge_ingestion_agent = KnowledgeIngestionAgent(knowledge_base, memory)
-    agent = ContentAgent(knowledge_base, skills, llm, memory)
+    agent = ContentAgent(knowledge_base, skills, content_llm, memory)
     publishing_agent = PublishingAgent(memory, publishers)
     skill_evolution_agent = SkillEvolutionAgent(memory, Path("backend/app/skills"))
+    reflection_agent = ReflectionAgent(memory, reflection_llm)
+    growth_agent = GrowthAgent(memory)
+    runtime = OpenSkaldAgentRuntime(
+        content_agent=agent,
+        publishing_agent=publishing_agent,
+        reflection_agent=reflection_agent,
+        growth_agent=growth_agent,
+        skill_evolution_agent=skill_evolution_agent,
+        memory=memory,
+        writing_llm=writing_llm,
+    )
     scheduler = build_scheduler(
         agent,
         publishing_agent,
@@ -74,6 +104,9 @@ def build_container(config_path: str | None = None) -> AppContainer:
         agent,
         publishing_agent,
         skill_evolution_agent,
+        reflection_agent,
+        growth_agent,
+        runtime,
         scheduler,
         config_issues,
     )

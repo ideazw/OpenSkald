@@ -5,7 +5,13 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from backend.app.domain.models import Article, GeneratedContent, ReviewStatus, SkillProposal
+from backend.app.domain.models import (
+    Article,
+    GeneratedContent,
+    MemoryRecord,
+    ReviewStatus,
+    SkillProposal,
+)
 
 
 class JsonlStore:
@@ -230,3 +236,63 @@ class MemoryStore:
         if not updated:
             records.append(proposal.model_dump(mode="json"))
         self.skill_proposals.replace_all(records)
+
+    # ------------------------------------------------------------------
+    # Namespace-based memory records (Phase A)
+    # ------------------------------------------------------------------
+
+    def append_memory_record(self, record: MemoryRecord) -> None:
+        """Append a namespaced memory record for later retrieval."""
+        import json
+
+        records_path = self.memory.path.parent / "memory_records.jsonl"
+        records_path.parent.mkdir(parents=True, exist_ok=True)
+        with records_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record.model_dump(mode="json"), ensure_ascii=False) + "\n")
+        return record
+
+    def search_namespace(
+        self, namespace: str, kind: str | None = None, limit: int = 20
+    ) -> list[MemoryRecord]:
+        """Query memory records by namespace prefix (and optional kind)."""
+        records = self._read_memory_records()
+        if kind:
+            raw = [
+                r for r in records
+                if r.get("namespace", "").startswith(namespace) and r.get("kind") == kind
+            ]
+        else:
+            raw = [r for r in records if r.get("namespace", "").startswith(namespace)]
+        raw.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+        return [MemoryRecord.model_validate(r) for r in raw[:limit]]
+
+    def list_reflections(self, limit: int = 20) -> list[MemoryRecord]:
+        """Shortcut for reflection records."""
+        return self.search_namespace(
+            namespace="viking://agent/reflections", kind="reflection", limit=limit
+        )
+
+    def list_experiences(self, limit: int = 20) -> list[MemoryRecord]:
+        """Shortcut for experience records."""
+        return self.search_namespace(
+            namespace="viking://agent/experience", kind="experience", limit=limit
+        )
+
+    def _read_memory_records(self) -> list[dict]:
+        records_path = self.memory.path.parent / "memory_records.jsonl"
+        if not records_path.exists():
+            return []
+        rows = []
+        with records_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    rows.append(__import__("json").loads(line))
+        return rows
+
+    def _write_memory_records(self, rows: list[dict]) -> None:
+        import json
+        records_path = self.memory.path.parent / "memory_records.jsonl"
+        records_path.parent.mkdir(parents=True, exist_ok=True)
+        with records_path.open("w", encoding="utf-8") as f:
+            for row in rows:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")

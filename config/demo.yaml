@@ -38,6 +38,19 @@ publishers:
     dry_run: true
     credentials_env: XIAOHONGSHU_PUBLISHER_CREDENTIALS
 
+agent_llm: {}
+
+agent:
+  mode: single
+  workspace_id: open-skald
+  reflection:
+    enabled: true
+    min_confidence_for_skill_proposal: 0.7
+  collaboration:
+    enabled: false
+    max_agent_turns: 8
+    require_review_agent: true
+
 review:
   require_human_approval: true
   storage_path: ./data/demo-review.jsonl

@@ -17,6 +17,22 @@ class LLMConfig(BaseModel):
     timeout_seconds: float = 60
 
 
+class PartialLLMConfig(BaseModel):
+    """All fields optional — used for per-agent LLM overrides."""
+    provider: str | None = None
+    base_url: str | None = None
+    api_key_env: str | None = None
+    model: str | None = None
+    timeout_seconds: float | None = None
+
+
+class AgentLLMConfig(BaseModel):
+    """Per-agent LLM overrides. Fields omitted or None → global llm config."""
+    content: PartialLLMConfig = Field(default_factory=PartialLLMConfig)
+    reflection: PartialLLMConfig = Field(default_factory=PartialLLMConfig)
+    writing: PartialLLMConfig = Field(default_factory=PartialLLMConfig)
+
+
 class OpenVikingConfig(BaseModel):
     knowledge_base_path: Path = Path("./knowledge")
     include_globs: list[str] = Field(default_factory=lambda: ["**/*.md", "**/*.txt"])
@@ -49,6 +65,24 @@ class MemoryConfig(BaseModel):
     article_index_path: Path = Path("./data/articles.jsonl")
 
 
+
+class ReflectionConfig(BaseModel):
+    enabled: bool = True
+    min_confidence_for_skill_proposal: float = 0.7
+
+
+class CollaborationConfig(BaseModel):
+    enabled: bool = False
+    max_agent_turns: int = 8
+    require_review_agent: bool = True
+
+
+class AgentConfig(BaseModel):
+    mode: Literal["single", "collaborative"] = "single"
+    workspace_id: str = "open-skald"
+    reflection: ReflectionConfig = Field(default_factory=ReflectionConfig)
+    collaboration: CollaborationConfig = Field(default_factory=CollaborationConfig)
+
 class AppConfig(BaseModel):
     environment: Literal["development", "production", "test"] = "development"
     log_level: str = "INFO"
@@ -58,6 +92,8 @@ class AppConfig(BaseModel):
     publishers: dict[str, PublisherConfig] = Field(default_factory=dict)
     review: ReviewConfig = Field(default_factory=ReviewConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    agent: AgentConfig = Field(default_factory=AgentConfig)
+    agent_llm: AgentLLMConfig = Field(default_factory=AgentLLMConfig)
 
 
 class ConfigIssue(BaseModel):
@@ -272,6 +308,19 @@ def config_summary(config: AppConfig, issues: list[ConfigIssue] | None = None) -
             "storage_path": str(config.memory.storage_path),
             "skill_proposals_path": str(config.memory.skill_proposals_path),
             "article_index_path": str(config.memory.article_index_path),
+        },
+        "agent": {
+            "mode": config.agent.mode,
+            "workspace_id": config.agent.workspace_id,
+            "reflection_enabled": config.agent.reflection.enabled,
+            "collaboration_enabled": config.agent.collaboration.enabled,
+            "max_agent_turns": config.agent.collaboration.max_agent_turns,
+            "require_review_agent": config.agent.collaboration.require_review_agent,
+        },
+        "agent_llm": {
+            "content": config.agent_llm.content.model_dump(exclude_none=True) or None,
+            "reflection": config.agent_llm.reflection.model_dump(exclude_none=True) or None,
+            "writing": config.agent_llm.writing.model_dump(exclude_none=True) or None,
         },
         "issues": [issue.model_dump() for issue in (issues or validate_config(config))],
     }

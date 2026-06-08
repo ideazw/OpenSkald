@@ -63,12 +63,79 @@ class SkillEvolutionAgent:
             for proposal in self.memory.list_skill_proposals()
             if proposal.status == ReviewStatus.PENDING_REVIEW
         }
+        # Phase B: reflection-based discovery (prioritized)
+        for proposal in self._discover_from_reflections(existing_names):
+            self.memory.store_skill_proposal(proposal)
+            proposals.append(proposal)
+        # Fallback heuristic rules
         for proposal in self._discover_failure_proposals(existing_names):
             self.memory.store_skill_proposal(proposal)
             proposals.append(proposal)
         for proposal in self._discover_platform_volume_proposals(existing_names):
             self.memory.store_skill_proposal(proposal)
             proposals.append(proposal)
+        return proposals
+
+    def _discover_from_reflections(
+        self, existing_names: set[str]
+    ) -> list[SkillProposal]:
+        proposals: list[SkillProposal] = []
+        reflections = self.memory.list_reflections(limit=20)
+
+        # Group by recommendation pattern
+        platform_fix_reflections = [
+            r for r in reflections
+            if "preflight" in r.payload.get("recommendation", "").lower()
+            or "configuration" in r.payload.get("recommendation", "").lower()
+        ]
+        quality_reflections = [
+            r for r in reflections
+            if "quality" in r.payload.get("lesson", "").lower()
+            or "platform" in r.payload.get("recommendation", "").lower()
+        ]
+
+        if (
+            len(platform_fix_reflections) >= 2
+            and "reflection_based_preflight" not in existing_names
+        ):
+            proposals.append(
+                SkillProposal(
+                    title="Reflection-driven preflight checker",
+                    reason=(
+                        "Multiple reflections highlight missing preflight checks. "
+                        "A preflight skill can catch issues before publish attempts."
+                    ),
+                    proposed_skill_name="reflection_based_preflight",
+                    draft_prompt=(
+                        "Check these source articles for common failure patterns "
+                        "identified by past reflections. Return a preflight report "
+                        "with pass/fail for each check.\n\n{articles}"
+                    ),
+                    content_types=[ContentType.DAILY_SUMMARY, ContentType.HOT_TOPIC_ANALYSIS],
+                )
+            )
+
+        if (
+            len(quality_reflections) >= 3
+            and "reflection_based_quality" not in existing_names
+        ):
+            proposals.append(
+                SkillProposal(
+                    title="Reflection-aligned quality reviewer",
+                    reason=(
+                        "Sustained quality-related reflections indicate that a "
+                        "dedicated review skill would reduce human review effort."
+                    ),
+                    proposed_skill_name="reflection_based_quality",
+                    draft_prompt=(
+                        "Review these generated content drafts using lessons learned "
+                        "from past agent reflections. Focus on platform fit, factual "
+                        "grounding, and style consistency.\n\n{articles}"
+                    ),
+                    content_types=list(ContentType),
+                )
+            )
+
         return proposals
 
     def _discover_failure_proposals(self, existing_names: set[str]) -> list[SkillProposal]:

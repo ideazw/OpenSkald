@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from backend.app.bootstrap import AppContainer
 from backend.app.config.settings import config_summary
-from backend.app.domain.models import ContentType, ReviewStatus
+from backend.app.domain.models import AgentMetric, AgentMode, ContentType, ReviewStatus
 from backend.app.llm.provider import LLMProviderError
 from backend.app.ops.status import operational_status
 
@@ -40,6 +40,20 @@ class ApprovalRequest(BaseModel):
     note: str | None = None
 
 
+
+
+
+class AgentRunRequest(BaseModel):
+    objective: str
+    content_type: ContentType
+    platforms: list[str]
+    mode: str = "single"
+
+
+class MetricsImportRequest(BaseModel):
+    metrics: list[AgentMetric]
+
+
 def build_router(container: AppContainer) -> APIRouter:
     api = APIRouter()
 
@@ -50,6 +64,7 @@ def build_router(container: AppContainer) -> APIRouter:
             "config_errors": [
                 issue.message for issue in container.config_issues if issue.level == "error"
             ],
+            "reflector": "ok",
             "skills": container.skills.names(),
             "publishers": container.publishers.names(),
             "scheduler_jobs": [job.id for job in container.scheduler.get_jobs()],
@@ -123,6 +138,55 @@ def build_router(container: AppContainer) -> APIRouter:
             for item in container.memory.search_content(query=q, limit=limit)
         ]
 
+    @api.get("/memory/records")
+    async def memory_records(
+        namespace: str = Query(default="viking://"),
+        kind: str | None = Query(default=None),
+        limit: int = LIMIT_QUERY,
+    ) -> list[dict]:
+        return [
+            r.model_dump(mode="json")
+            for r in container.memory.search_namespace(namespace=namespace, kind=kind, limit=limit)
+        ]
+
+    @api.get("/memory/reflections")
+    async def memory_reflections(limit: int = LIMIT_QUERY) -> list[dict]:
+        return [
+            r.model_dump(mode="json") for r in container.memory.list_reflections(limit=limit)
+        ]
+
+    @api.post("/memory/reflections/discover")
+    async def discover_reflections() -> list[dict]:
+        reflections = await container.reflection_agent.discover()
+        return [ref.model_dump(mode="json") for ref in reflections]
+
+    @api.post("/metrics/import")
+    async def import_metrics(request: MetricsImportRequest) -> dict:
+        count = await container.growth_agent.import_metrics(request.metrics)
+        return {"ok": True, "imported": count}
+
+    @api.post("/agent/runs")
+    async def create_agent_run(request: AgentRunRequest) -> dict:
+        mode = AgentMode.COLLABORATIVE if request.mode == "collaborative" else AgentMode.SINGLE
+        run = await container.runtime.run(
+            objective=request.objective,
+            content_type=request.content_type,
+            platforms=request.platforms,
+            mode=mode,
+        )
+        return run.model_dump(mode="json")
+
+    @api.get("/agent/runs")
+    async def list_agent_runs(limit: int = LIMIT_QUERY) -> list[dict]:
+        return container.runtime.list_runs(limit=limit)
+
+    @api.get("/agent/runs/{run_id}")
+    async def get_agent_run(run_id: str) -> dict:
+        run = container.runtime.get_run(run_id)
+        if not run:
+            raise HTTPException(status_code=404, detail="agent run not found")
+        return run
+
     @api.post("/review/{content_id}/approve")
     async def approve(content_id: str) -> dict:
         content = container.memory.get_content(content_id)
@@ -132,6 +196,19 @@ def build_router(container: AppContainer) -> APIRouter:
         content.reviewed_at = datetime.now(UTC)
         content.review_note = None
         container.memory.update_content(content)
+        # Record experience
+        container.memory.append_memory_record(
+            __import__("backend.app.domain.models", fromlist=["MemoryRecord"]).MemoryRecord(
+                namespace="viking://agent/experience",
+                kind="experience",
+                payload={
+                    "action": "approve",
+                    "result": "success",
+                    "content_ids": [content_id],
+                },
+                source="API.approve",
+            )
+        )
         return content.model_dump(mode="json")
 
     @api.post("/review/{content_id}/reject")
@@ -143,6 +220,20 @@ def build_router(container: AppContainer) -> APIRouter:
         content.reviewed_at = datetime.now(UTC)
         content.review_note = request.reason
         container.memory.update_content(content)
+        # Record experience
+        container.memory.append_memory_record(
+            __import__("backend.app.domain.models", fromlist=["MemoryRecord"]).MemoryRecord(
+                namespace="viking://agent/experience",
+                kind="experience",
+                payload={
+                    "action": "reject",
+                    "result": "success",
+                    "content_ids": [content_id],
+                    "errors": [request.reason],
+                },
+                source="API.reject",
+            )
+        )
         return content.model_dump(mode="json")
 
     @api.post("/publish/{platform}/{content_id}")

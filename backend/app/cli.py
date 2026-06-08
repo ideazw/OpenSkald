@@ -7,7 +7,7 @@ from typing import Any
 
 from backend.app.bootstrap import build_container
 from backend.app.config.settings import config_summary
-from backend.app.domain.models import ContentType, ReviewStatus
+from backend.app.domain.models import AgentMode, ContentType, MemoryRecord, ReviewStatus
 from backend.app.ops.status import operational_status
 
 
@@ -83,6 +83,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     publish_one = subcommands.add_parser("publish-content", help="Publish one approved item.")
     publish_one.add_argument("--content-id", required=True)
+
+    agent_run = subcommands.add_parser("agent-run", help="Execute an agent run.")
+    agent_run.add_argument("--objective", required=True)
+    agent_run.add_argument("--content-type", required=True, choices=list(ContentType))
+    agent_run.add_argument("--platform", action="append", required=True, dest="platforms")
+    agent_run.add_argument("--mode", default="single", choices=["single", "collaborative"])
+
+    memory_list = subcommands.add_parser("memory-list", help="List namespaced memory records.")
+    memory_list.add_argument("--namespace", default="viking://agent/reflections")
+    memory_list.add_argument("--kind", default=None)
+    memory_list.add_argument("--limit", type=int, default=20)
+
+    subcommands.add_parser(
+        "reflections-discover", help="Trigger reflection discovery on recent experiences."
+    )
+
+    metrics_import = subcommands.add_parser("metrics-import", help="Import external metrics.")
+    metrics_import.add_argument("--file", required=True, help="Path to metrics JSON file")
 
     return parser
 
@@ -170,6 +188,18 @@ async def _run(args: argparse.Namespace) -> int:
             return 1
         content.status = ReviewStatus.APPROVED
         container.memory.update_content(content)
+        container.memory.append_memory_record(
+            MemoryRecord(
+                namespace="viking://agent/experience",
+                kind="experience",
+                payload={
+                    "action": "approve",
+                    "result": "success",
+                    "content_ids": [content.id],
+                },
+                source="CLI.review-approve",
+            )
+        )
         _print_json(content.model_dump(mode="json"))
         return 0
 
@@ -181,6 +211,19 @@ async def _run(args: argparse.Namespace) -> int:
         content.status = ReviewStatus.REJECTED
         content.review_note = args.reason
         container.memory.update_content(content)
+        container.memory.append_memory_record(
+            MemoryRecord(
+                namespace="viking://agent/experience",
+                kind="experience",
+                payload={
+                    "action": "reject",
+                    "result": "success",
+                    "content_ids": [content.id],
+                    "errors": [args.reason],
+                },
+                source="CLI.review-reject",
+            )
+        )
         _print_json(content.model_dump(mode="json"))
         return 0
 
@@ -224,6 +267,41 @@ async def _run(args: argparse.Namespace) -> int:
             )
             return 1
         _print_json(result)
+        return 0
+
+    if args.command == "agent-run":
+        mode = AgentMode.COLLABORATIVE if args.mode == "collaborative" else AgentMode.SINGLE
+        run = await container.runtime.run(
+            objective=args.objective,
+            content_type=ContentType(args.content_type),
+            platforms=args.platforms,
+            mode=mode,
+        )
+        _print_json(run.model_dump(mode="json"))
+        return 0
+
+    if args.command == "memory-list":
+        records = container.memory.search_namespace(
+            namespace=args.namespace, kind=args.kind, limit=args.limit
+        )
+        _print_json([r.model_dump(mode="json") for r in records])
+        return 0
+
+    if args.command == "reflections-discover":
+        reflections = await container.reflection_agent.discover()
+        _print_json([ref.model_dump(mode="json") for ref in reflections])
+        return 0
+
+    if args.command == "metrics-import":
+        import json as _json
+
+        from backend.app.domain.models import AgentMetric
+
+        with open(args.file, encoding="utf-8") as _f:
+            raw_metrics = _json.load(_f)
+        metrics = [AgentMetric.model_validate(m) for m in raw_metrics]
+        count = await container.growth_agent.import_metrics(metrics)
+        _print_json({"ok": True, "imported": count})
         return 0
 
     raise ValueError(f"Unsupported command: {args.command}")

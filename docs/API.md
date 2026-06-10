@@ -119,7 +119,7 @@ Important response areas:
 | `knowledge` | Configured path, existence, and indexed article count |
 | `memory` | Article, content, and skill proposal summaries |
 | `skills.loaded` | Loaded skill names |
-| `publishers` | Enabled and dry-run status by platform |
+This document provides the complete API reference for OpenSkald.
 
 ## Knowledge
 
